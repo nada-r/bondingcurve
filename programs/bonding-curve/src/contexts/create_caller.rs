@@ -1,3 +1,4 @@
+// Import necessary modules and types
 use crate::state::Caller;
 use anchor_lang::prelude::*;
 use anchor_spl::{
@@ -9,6 +10,7 @@ use anchor_spl::{
     token::{Mint, Token, TokenAccount},
 };
 
+// Define the CreateCaller struct with its associated accounts
 #[derive(Accounts)]
 #[instruction(token_name: String, token_symbol: String, uri: String)]
 pub struct CreateCaller<'info> {
@@ -61,6 +63,7 @@ pub struct CreateCaller<'info> {
         bump,
         seeds::program = token_metadata_program.key(),
     )]
+    /// CHECK: This account will be initialized by the metaplex program
     pub metadata: UncheckedAccount<'info>,
     pub token_metadata_program: Program<'info, Metaplex>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -69,20 +72,21 @@ pub struct CreateCaller<'info> {
     pub system_program: Program<'info, System>,
 }
 
+// Implement the CreateCaller struct
 impl<'info> CreateCaller<'info> {
+    // Define the create_caller function
     pub fn create_caller(
         ctx: Context<CreateCaller>,
         token_name: String,
         token_symbol: String,
         uri: String,
     ) -> Result<()> {
+        // Set initial values for mint supply, total supply, and value target
         let mint_supply = 1_000_000_000;
         let mint_total_supply = 1_000_000_000;
         let value_target = 1_000_000_000;
 
-        msg!("METADATA DATA");
-
-        // On-chain token metadata for the mint
+        // Create on-chain token metadata for the mint
         let data_v2 = DataV2 {
             name: token_name.to_string(),
             symbol: token_symbol.to_string(),
@@ -93,7 +97,7 @@ impl<'info> CreateCaller<'info> {
             uses: None,
         };
 
-        // Signer seeds
+        // Generate signer seeds for the mint authority
         let caller_key = ctx.accounts.caller.key();
         let seeds = &[
             b"mint_authority",
@@ -102,8 +106,7 @@ impl<'info> CreateCaller<'info> {
         ];
         let signer = [&seeds[..]];
 
-        msg!("METADATA CREATE");
-        // CPI Context
+        // Create CPI Context for metadata creation
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_metadata_program.to_account_info(),
             CreateMetadataAccountsV3 {
@@ -118,10 +121,10 @@ impl<'info> CreateCaller<'info> {
             &signer,
         );
 
-        msg!("METADATA CREATE EXEC");
+        // Create metadata accounts
         create_metadata_accounts_v3(cpi_ctx, data_v2, true, true, None)?;
 
-        // Mint tokens to the mint vault
+        // Mint tokens to the mint reserve
         anchor_spl::token::mint_to(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -139,6 +142,7 @@ impl<'info> CreateCaller<'info> {
             mint_supply,
         )?;
 
+        // Initialize the caller account with the necessary data
         ctx.accounts.caller_account.set_inner(Caller {
             caller: ctx.accounts.caller.key(),
             mint_bump: ctx.bumps.mint,
