@@ -6,7 +6,7 @@ pub mod state;
 
 use contexts::*;
 
-declare_id!("CiWhtRq9x42bmuPgNNF19ywFrK31TSo4mznQq7gYezKM");
+declare_id!("J8bgMduAt7kgqN4htuCU2WwHEuPNPWnxGkNLe2kiCwyq");
 
 #[program]
 pub mod bonding_curve {

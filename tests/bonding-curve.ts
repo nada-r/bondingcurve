@@ -5,7 +5,6 @@ import {
   Keypair,
   LAMPORTS_PER_SOL,
   PublicKey,
-  sendAndConfirmTransaction,
   SystemProgram,
   Transaction,
 } from "@solana/web3.js";
@@ -13,8 +12,13 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountInstruction,
   getAssociatedTokenAddress,
+  getAssociatedTokenAddressSync,
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
+
+const MPL_TOKEN_METADATA_ID = new PublicKey(
+  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+);
 
 describe("bonding-curve", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -63,70 +67,51 @@ describe("bonding-curve", () => {
     const tokenSymbol = "TEST";
     const uri = "https://example.com/token-metadata";
 
+    // console.log("caller", caller.publicKey.toBase58());
+
     const [callerAccount] = PublicKey.findProgramAddressSync(
       [Buffer.from("caller"), caller.publicKey.toBuffer()],
       program.programId
     );
+    // console.log("callerAccount", callerAccount.toBase58());
 
     const [mint] = PublicKey.findProgramAddressSync(
       [Buffer.from("mint"), caller.publicKey.toBuffer()],
       program.programId
     );
+    // console.log("mint", mint.toBase58());
 
-    const [mintVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("mint_vault"), caller.publicKey.toBuffer()],
+    const mintAuthority = PublicKey.findProgramAddressSync(
+      [Buffer.from("mint_authority")],
       program.programId
-    );
+    )[0];
+    // console.log("mintAuthority", mintAuthority.toBase58());
+
+    const mintAta = getAssociatedTokenAddressSync(mint, caller.publicKey);
+    // console.log("mintAta", mintAta.toBase58());
 
     const [solVault] = PublicKey.findProgramAddressSync(
       [Buffer.from("sol_vault"), caller.publicKey.toBuffer()],
       program.programId
     );
+    // console.log("solVault", solVault.toBase58());
 
-    const metadataAddress = PublicKey.findProgramAddressSync(
-      [Buffer.from("metadata"), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-      TOKEN_PROGRAM_ID
+    const metadataAccount = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("metadata"),
+        MPL_TOKEN_METADATA_ID.toBuffer(),
+        mint.toBuffer(),
+      ],
+      MPL_TOKEN_METADATA_ID
     )[0];
-
-    // Create associated token account for mintVault
-    // console.log("Creating mint vault ATA");
-    // const mintVaultATA = await getAssociatedTokenAddress(
-    //   mint,
-    //   caller.publicKey,
-    //   false,
-    //   TOKEN_PROGRAM_ID,
-    // );
-
-    // const createMintVaultATAIx = createAssociatedTokenAccountInstruction(
-    //   provider.publicKey,
-    //   mintVaultATA,
-    //   caller.publicKey,
-    //   mint,
-    //   TOKEN_PROGRAM_ID
-    // );
-
-    // const tx = new Transaction().add(createMintVaultATAIx);
-    // await provider.sendAndConfirm(tx);
-    console.log("AZERTY", caller.publicKey.toBase58());
+    // console.log("metadataAccount", metadataAccount.toBase58());
 
     console.log("Create caller");
     try {
       await program.methods
         .createCaller(tokenName, tokenSymbol, uri)
-        .accountsPartial({
+        .accounts({
           caller: caller.publicKey,
-          callerAccount,
-          mint,
-          metadataAccount: metadataAddress,
-          mintVault,
-          solVault,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-          tokenMetadataProgram: new PublicKey(
-            "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
-          ), // Metaplex Token Metadata Program ID
-          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         })
         .signers([caller])
         .rpc()

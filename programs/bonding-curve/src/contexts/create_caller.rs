@@ -1,13 +1,15 @@
-use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::metadata::{create_metadata_accounts_v3, CreateMetadataAccountsV3};
-use anchor_spl::token::{Mint, Token, TokenAccount};
-use mpl_token_metadata::accounts::Metadata;
-use mpl_token_metadata::types::DataV2;
-
 use crate::state::Caller;
+use anchor_lang::prelude::*;
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    metadata::{
+        create_metadata_accounts_v3, mpl_token_metadata::types::DataV2, CreateMetadataAccountsV3,
+        Metadata as Metaplex,
+    },
+    token::{Mint, Token, TokenAccount},
+};
 
-#[derive(Accounts, AnchorDeserialize)]
+#[derive(Accounts)]
 #[instruction(token_name: String, token_symbol: String, uri: String)]
 pub struct CreateCaller<'info> {
     #[account(mut)]
@@ -15,45 +17,56 @@ pub struct CreateCaller<'info> {
     #[account(
         init,
         payer = caller,
-        space = Caller::INIT_SPACE,
+        space = 8 + Caller::INIT_SPACE,
         seeds = [b"caller", caller.key().as_ref()],
         bump,
     )]
     pub caller_account: Account<'info, Caller>,
+    /// CHECK: Using seed to validate mint_authority account
+    #[account(
+        seeds=[b"mint_authority", caller.key().as_ref()],
+        bump,
+    )]
+    pub mint_authority: AccountInfo<'info>,
     #[account(
         init,
-        seeds = [b"mint", caller.key().as_ref()],
-        bump,
         payer = caller,
         mint::decimals = 8,
-        mint::authority = mint.key(),
+        mint::authority = mint_authority,
+        seeds = [b"mint", caller.key().as_ref()],
+        bump,
     )]
     pub mint: Account<'info, Mint>,
-    ///CHECK: Using "address" constraint to validate metadata account address
-    #[account(
-        mut,
-        address=Metadata::find_pda(&mint.key()).0
-    )]
-    pub metadata_account: UncheckedAccount<'info>,
     #[account(
         init,
         payer = caller,
         associated_token::mint = mint,
-        associated_token::authority = mint,
+        associated_token::authority = mint_authority,
     )]
-    pub mint_vault: Account<'info, TokenAccount>,
+    pub mint_reserve: Account<'info, TokenAccount>,
     #[account(
-        mut,
-        seeds = [b"sol_vault", caller.key().as_ref()],
+        seeds = [b"sol_reserve", caller.key().as_ref()],
         bump,
     )]
-    pub sol_vault: SystemAccount<'info>,
-    pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
-    /// CHECK: This is not dangerous because we don't read or write from this account
-    pub token_metadata_program: UncheckedAccount<'info>,
+    /// CHECK: This is not written to, it's just a PDA
+    pub sol_reserve: UncheckedAccount<'info>,
+    /// CHECK: This account will be initialized by the metaplex program
+    #[account(
+        mut,
+        seeds = [
+            b"metadata",
+            token_metadata_program.key().as_ref(),
+            mint.key().as_ref()
+        ],
+        bump,
+        seeds::program = token_metadata_program.key(),
+    )]
+    pub metadata: UncheckedAccount<'info>,
+    pub token_metadata_program: Program<'info, Metaplex>,
     pub associated_token_program: Program<'info, AssociatedToken>,
+    pub token_program: Program<'info, Token>,
+    pub rent: Sysvar<'info, Rent>,
+    pub system_program: Program<'info, System>,
 }
 
 impl<'info> CreateCaller<'info> {
@@ -67,7 +80,7 @@ impl<'info> CreateCaller<'info> {
         let mint_total_supply = 1_000_000_000;
         let value_target = 1_000_000_000;
 
-        msg!("Test");
+        msg!("METADATA DATA");
 
         // On-chain token metadata for the mint
         let data_v2 = DataV2 {
@@ -80,67 +93,33 @@ impl<'info> CreateCaller<'info> {
             uses: None,
         };
 
+        // Signer seeds
+        let caller_key = ctx.accounts.caller.key();
+        let seeds = &[
+            b"mint_authority",
+            caller_key.as_ref(),
+            &[ctx.bumps.mint_authority],
+        ];
+        let signer = [&seeds[..]];
+
+        msg!("METADATA CREATE");
         // CPI Context
-        let cpi_ctx = CpiContext::new(
+        let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_metadata_program.to_account_info(),
             CreateMetadataAccountsV3 {
-                metadata: ctx.accounts.metadata_account.to_account_info(), // the metadata account being created
-                mint: ctx.accounts.mint.to_account_info(), // the mint account of the metadata account
-                mint_authority: ctx.accounts.mint.to_account_info(), // the mint authority of the mint account
-                update_authority: ctx.accounts.mint.to_account_info(), // the update authority of the metadata account
-                payer: ctx.accounts.caller.to_account_info(), // the payer for creating the metadata account
-                system_program: ctx.accounts.system_program.to_account_info(), // the system program account
-                rent: ctx.accounts.rent.to_account_info(), // the rent sysvar account
+                metadata: ctx.accounts.metadata.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
+                mint_authority: ctx.accounts.mint_authority.to_account_info(),
+                update_authority: ctx.accounts.mint_authority.to_account_info(),
+                payer: ctx.accounts.caller.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                rent: ctx.accounts.rent.to_account_info(),
             },
+            &signer,
         );
 
-        create_metadata_accounts_v3(
-            cpi_ctx, // cpi context
-            data_v2, // token metadata
-            true,    // is_mutable
-            true,    // update_authority_is_signer
-            None,    // collection details
-        )?;
-
-        // Create the mint account
-        anchor_spl::token::initialize_mint(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                anchor_spl::token::InitializeMint {
-                    mint: ctx.accounts.mint.to_account_info(),
-                    rent: ctx.accounts.rent.to_account_info(),
-                },
-            ),
-            8,
-            &ctx.accounts.mint.key(),
-            Some(&ctx.accounts.mint.key()),
-        )?;
-
-        // Create the associated token account for the mint vault
-        anchor_spl::associated_token::create(CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            anchor_spl::associated_token::Create {
-                payer: ctx.accounts.caller.to_account_info(),
-                associated_token: ctx.accounts.mint_vault.to_account_info(),
-                authority: ctx.accounts.mint.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            },
-        ))?;
-
-        // Create the associated token account for the mint vault
-        anchor_spl::associated_token::create(CpiContext::new(
-            ctx.accounts.associated_token_program.to_account_info(),
-            anchor_spl::associated_token::Create {
-                payer: ctx.accounts.caller.to_account_info(),
-                associated_token: ctx.accounts.mint_vault.to_account_info(),
-                authority: ctx.accounts.mint.to_account_info(),
-                mint: ctx.accounts.mint.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                token_program: ctx.accounts.token_program.to_account_info(),
-            },
-        ))?;
+        msg!("METADATA CREATE EXEC");
+        create_metadata_accounts_v3(cpi_ctx, data_v2, true, true, None)?;
 
         // Mint tokens to the mint vault
         anchor_spl::token::mint_to(
@@ -148,13 +127,13 @@ impl<'info> CreateCaller<'info> {
                 ctx.accounts.token_program.to_account_info(),
                 anchor_spl::token::MintTo {
                     mint: ctx.accounts.mint.to_account_info(),
-                    to: ctx.accounts.mint_vault.to_account_info(),
-                    authority: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.mint_reserve.to_account_info(),
+                    authority: ctx.accounts.mint_authority.to_account_info(),
                 },
                 &[&[
-                    b"mint",
-                    ctx.accounts.caller.key().as_ref(),
-                    &[ctx.bumps.mint],
+                    b"mint_authority",
+                    caller_key.as_ref(),
+                    &[ctx.bumps.mint_authority],
                 ]],
             ),
             mint_supply,
@@ -162,14 +141,16 @@ impl<'info> CreateCaller<'info> {
 
         ctx.accounts.caller_account.set_inner(Caller {
             caller: ctx.accounts.caller.key(),
-            mint: ctx.accounts.mint.key(), // Add this line
+            mint_bump: ctx.bumps.mint,
+            mint_authority_bump: ctx.bumps.mint_authority,
             mint_supply,
             mint_total_supply,
             value_target,
-            mint_vault: ctx.accounts.mint_vault.key(),
-            sol_vault_bump: ctx.bumps.sol_vault,
+            mint_reserve: ctx.accounts.mint_reserve.key(),
+            sol_reserve_bump: ctx.bumps.sol_reserve,
             bump: ctx.bumps.caller_account,
         });
+
         Ok(())
     }
 }
