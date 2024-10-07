@@ -5,7 +5,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-bonding_curve = "J8bgMduAt7kgqN4htuCU2WwHEuPNPWnxGkNLe2kiCwyq"
+bonding_curve = "HCrubXr4ZpBewADnw7nDFmYixvqcwYqz3CxXHPqhHuTn"
 
 [registry]
 url = "https://api.apr.dev"
@@ -17,6 +17,11 @@ wallet = "~/.config/solana/id.json"
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
 test-watch = "fswatch -o ./programs ./tests ./Anchor.toml | xargs -n1 -I{} anchor test"
+
+[test]
+startup_wait = 5000
+shutdown_wait = 2000
+upgradeable = false
 
 [[test.genesis]]
 address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
