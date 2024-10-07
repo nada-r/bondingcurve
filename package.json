@@ -1,16 +1,19 @@
 {
+    "name": "bonding-curve",
+    "version": "0.1.0",
     "scripts": {
         "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
         "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
     },
     "dependencies": {
         "@coral-xyz/anchor": "^0.30.0",
-        "@solana/spl-token": "^0.4.6",
+        "@metaplex-foundation/js": "^0.20.1",
+        "@solana/spl-token": "^0.4.8",
         "@solana/web3.js": "^1.91.8"
     },
     "devDependencies": {
         "@types/bn.js": "^5.1.5",
-        "@types/chai": "^4.3.16",
+        "@types/chai": "5.0.0",
         "@types/mocha": "^10.0.6",
         "chai": "^5.1.1",
         "mocha": "^10.4.0",
